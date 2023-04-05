@@ -7,12 +7,10 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from sklearn.ensemble import RandomForestClassifier as RFC
 
-#TODO plot b on the same axis: have a plot function
-#TODO ask professor if we should do cv on any hyperparameter for lda and random forest or just work with default params
+
 #TODO learning the best n_estimators for random forest would be great
 #TODO find out if average precision is the mean of precision (positive) and precision (negative)
 #TODO check calculation for precision, f1 score and recall
-#TODO separate c and d
 
 
 def load_and_split_data(filename):
@@ -54,6 +52,7 @@ def configure_svm(x_train, y_train, Cs, cv, scoring):
     print(f'scores: {scores}')
     plt.figure(1)
     plt.plot(Cs, scores, '-*')
+    plt.xscale('log')
     plt.xlabel("C")
     plt.ylabel("mean F1 scores")
     plt.title("plot of scores vs C")
@@ -63,7 +62,7 @@ def configure_svm(x_train, y_train, Cs, cv, scoring):
     return Cs[max_index]
 
 
-def configure_decision_tree(x_train, y_train, ks, cv, scoring, criterion, figure):
+def configure_decision_tree(x_train, y_train, ks, cv, scoring, criterion):
     scores = []
     for k in ks:
         classifier = DecisionTreeClassifier(criterion=criterion, random_state=0, max_leaf_nodes=k)
@@ -72,15 +71,20 @@ def configure_decision_tree(x_train, y_train, ks, cv, scoring, criterion, figure
 
     print(f'k: {ks}')
     print(f'scores: {scores}')
+    max_index = scores.index(max(scores))
+    return scores, ks[max_index]
+
+
+
+def plot_decision_trees(ks, scores_gini, scores_ig, figure):
     plt.figure(figure)
-    plt.plot(ks, scores, '-*')
+    plt.plot(ks, scores_gini, '-*', color='green', label='DT-GINI')
+    plt.plot(ks, scores_ig, '-*', color='magenta', label='DT-IG')
     plt.xlabel("k")
     plt.ylabel("mean F1 scores")
-    plt.title(f"plot of scores vs k for DT-{criterion}")
+    plt.title(f"plot of scores vs k for DT-GINI and DT-IG")
+    plt.legend()
     plt.show()
-
-    max_index = scores.index(max(scores))
-    return ks[max_index]
 
 
 def grid_search(x_train, y_train, Cs, cv):
@@ -99,32 +103,25 @@ def grid_search(x_train, y_train, Cs, cv):
     print(f'best accuracy: {best_accuracy}')
 
 
-def calculate_evaluation_metrics(tn, fp, fn, tp):
+def calculate_evaluation_metrics(tn, fp, fn, tp, metric):
     """
     shows the calculation of recall, precision, accuracy, fscore, etc.
     :return: none
     """
-    accuracy = (tn + tp) / (tn + fp + fn + tp)
-    error_rate = (fn + fp) / (tn + fp + fn + tp)
     precision_p = tp / (tp + fp)
     precision_n = tn / (tn + fn)
     recall_p = tp / (tp + fn)
     recall_n = tn / (fp + tn)
     f1_p = (2 * precision_p * recall_p) / (precision_p + recall_p)
     f1_n = (2 * precision_n * recall_n) / (precision_n + recall_n)
-
-    print(f'accuracy: {accuracy}')
-    print(f'error rate: {error_rate}')
-    print(f'precision (p): {precision_p}')
-    print(f'precision (n): {precision_n}')
-    print(f'recall (p): {recall_p}')
-    print(f'recall (n): {recall_n}')
-    print(f'f-measure (p): {f1_p}')
-    print(f'f-measure (n): {f1_n}')
-
+    #Get their averages
     precision = np.mean([precision_n, precision_p])
     recall = np.mean([recall_n, recall_p])
     f1 = np.mean([f1_n, f1_p])
+
+    print(f'precision {metric}: {precision}')
+    print(f'Recall {metric}: {recall}')
+    print(f'F1 measure {metric}: {f1}')
 
     return precision, recall, f1
 
@@ -150,8 +147,11 @@ def main():
     x_test, y_test = load_and_split_data(test_data)
     best_c = configure_svm(x_train, y_train, C, cv, scoring)
     # grid_search(x_train, y_train, C, cv)
-    best_k_DT_gini = configure_decision_tree(x_train, y_train, k, cv, scoring, criterion[0], 2)
-    best_k_DT_ig = configure_decision_tree(x_train, y_train, k, cv, scoring, criterion[1], 3)
+    scores_gini, best_k_DT_gini = configure_decision_tree(x_train, y_train, k, cv, scoring, criterion[0])
+    scores_ig, best_k_DT_ig = configure_decision_tree(x_train, y_train, k, cv, scoring, criterion[1])
+
+    # plot k vs F1 for DT-IG & DT-GINI
+    plot_decision_trees(k, scores_gini, scores_ig, 2)
 
     # train and test SVM using best C learned above
     svm_classifier = SVC(kernel='linear', C=best_c, random_state=42)
@@ -182,20 +182,30 @@ def main():
     print(tn_lda, fp_lda, fn_lda, tp_lda)
 
     # train and test random forest using default hyper-parameters
-    rf_classifier = RFC(n_estimators=10, random_state=0)                   # RFC - Random forest classifier see import
+    rf_classifier = RFC(random_state=0)                   # RFC - Random forest classifier see import
     rf_classifier.fit(x_train, y_train)
     y_pred_rfc = rf_classifier.predict(x_test)
     tn_rfc, fp_rfc, fn_rfc, tp_rfc = metrics.confusion_matrix(y_test, y_pred_rfc).ravel()
     print(tn_rfc, fp_rfc, fn_rfc, tp_rfc)
 
     # calculate evaluation metrics
-    precision_svm, recall_svm, f1_svm = calculate_evaluation_metrics(tn, fp, fn, tp)
-    precision_gini, recall_gini, f1_gini = calculate_evaluation_metrics(tn_gini, fp_gini, fn_gini, tp_gini)
-    precision_ig, recall_ig, f1_ig = calculate_evaluation_metrics(tn_ig, fp_ig, fn_ig, tp_ig)
-    precision_lda, recall_lda, f1_lda = calculate_evaluation_metrics(tn_lda, fp_lda, fn_lda, tp_lda)
-    precision_rfc, recall_rfc, f1_rfc = calculate_evaluation_metrics(tn_rfc, fp_rfc, fn_rfc, tp_rfc)
+    precision_svm, recall_svm, f1_svm = calculate_evaluation_metrics(tn, fp, fn, tp, 'SVM')
+    precision_gini, recall_gini, f1_gini = calculate_evaluation_metrics(tn_gini, fp_gini, fn_gini, tp_gini, "DT-GINI")
+    precision_ig, recall_ig, f1_ig = calculate_evaluation_metrics(tn_ig, fp_ig, fn_ig, tp_ig, 'DT-IG')
+    precision_lda, recall_lda, f1_lda = calculate_evaluation_metrics(tn_lda, fp_lda, fn_lda, tp_lda, 'LDA')
+    precision_rfc, recall_rfc, f1_rfc = calculate_evaluation_metrics(tn_rfc, fp_rfc, fn_rfc, tp_rfc, 'RFC')
 
-    # plot bar graphs
+    # plot bar graphs without random forest
+    label = ["SVM", "DT-GINI", "DT-IG", "LDA"]
+    precision_data = [precision_svm, precision_gini, precision_ig, precision_lda]
+    recall_data = [recall_svm, recall_gini, recall_ig, recall_lda]
+    f1_data = [f1_svm, f1_gini, f1_ig, f1_lda]
+
+    plot_bar(precision_data, label, "Precision")
+    plot_bar(recall_data, label, "Recall")
+    plot_bar(f1_data, label, "f1 score")
+
+    # plot bar graphs with random forest
     label = ["SVM", "DT-GINI", "DT-IG", "LDA", "RF"]
     precision_data = [precision_svm, precision_gini, precision_ig, precision_lda, precision_rfc]
     recall_data = [recall_svm, recall_gini, recall_ig, recall_lda, recall_rfc]
